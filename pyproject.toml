@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pdf-rag-system"
+version = "0.1.0"
+description = "Local PDF-based retrieval augmented generation system using OpenAI and ChromaDB."
+readme = "README.md"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+  "chromadb>=0.5.11,<1.2",
+  "fastembed>=0.7.1,<1",
+  "gradio>=5.23.0,<6",
+  "openai>=1.0.0,<2",
+  "pymupdf>=1.26.4,<2",
+  "pypdf>=5.3.0,<6",
+  "python-dotenv>=1.0.1,<2",
+  "rapidocr>=3.4.2,<4",
+]
+
+[project.scripts]
+rag-ingest = "rag_system.cli:main"
+rag-reset = "rag_system.reset:main"
+rag-ui = "rag_system.web:main"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["rag_system"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
