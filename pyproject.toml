@@ -11,17 +11,20 @@ requires-python = ">=3.13,<3.15"
 dependencies = [
   "chromadb>=0.5.11,<1.2",
   "fastembed>=0.7.1,<1",
+  "fastapi>=0.115.12,<1",
   "gradio>=5.23.0,<6",
   "openai>=1.0.0,<2",
   "pymupdf>=1.26.4,<2",
   "pypdf>=5.3.0,<6",
   "python-dotenv>=1.0.1,<2",
   "rapidocr>=3.4.2,<4",
+  "uvicorn>=0.34.0,<1",
 ]
 
 [project.scripts]
 rag-ingest = "rag_system.cli:main"
 rag-reset = "rag_system.reset:main"
+rag-api = "rag_system.api.app:main"
 rag-ui = "rag_system.web:main"
 
 [tool.uv]

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from openai import APIConnectionError, APIError, APITimeoutError, OpenAI
 
@@ -30,6 +31,14 @@ def slugify(value: str) -> str:
 def batched(items: list[str], size: int) -> Iterable[list[str]]:
     for start in range(0, len(items), size):
         yield items[start : start + size]
+
+
+@dataclass(frozen=True)
+class AnswerPlan:
+    question: str
+    messages: list[dict[str, str]]
+    hits: list[RetrievalHit]
+    fallback_answer: str | None = None
 
 
 class RAGSystem:
@@ -233,23 +242,62 @@ class RAGSystem:
         question: str,
         chat_history: list[dict[str, str]] | None = None,
     ) -> tuple[str, list[RetrievalHit]]:
+        plan = self.prepare_answer(question, chat_history)
+        if plan.fallback_answer is not None:
+            return plan.fallback_answer, plan.hits
+
+        answer = self.generate_answer(plan)
+        return answer, plan.hits
+
+    def prepare_answer(
+        self,
+        question: str,
+        chat_history: list[dict[str, str]] | None = None,
+    ) -> AnswerPlan:
         self.require_openai_key()
         self.refresh_state()
 
         if not question.strip():
-            return "Ask a question about the indexed PDFs.", []
+            return AnswerPlan(
+                question=question,
+                messages=[],
+                hits=[],
+                fallback_answer="Ask a question about the indexed PDFs.",
+            )
         if not self.catalog.get("chunks"):
-            return "No indexed PDF content is available yet. Add PDFs to data/pdfs and run ingestion first.", []
+            return AnswerPlan(
+                question=question,
+                messages=[],
+                hits=[],
+                fallback_answer=(
+                    "No indexed PDF content is available yet. Add PDFs to data/pdfs and run ingestion first."
+                ),
+            )
 
         retrieval_query = self._build_retrieval_query(question, chat_history or [])
         query_embedding = self._embed_texts([retrieval_query])[0]
         hits = self.retriever.search(retrieval_query, query_embedding)
         if not hits:
-            return "I could not find relevant indexed passages for that question.", []
+            return AnswerPlan(
+                question=question,
+                messages=[],
+                hits=[],
+                fallback_answer="I could not find relevant indexed passages for that question.",
+            )
 
         messages = self._build_generation_messages(question, chat_history or [], hits)
-        answer = self._chat_completion(messages)
-        return answer, hits
+        return AnswerPlan(question=question, messages=messages, hits=hits)
+
+    def generate_answer(self, plan: AnswerPlan) -> str:
+        if plan.fallback_answer is not None:
+            return plan.fallback_answer
+        return self._chat_completion(plan.messages)
+
+    def stream_answer(self, plan: AnswerPlan) -> Iterator[str]:
+        if plan.fallback_answer is not None:
+            yield plan.fallback_answer
+            return
+        yield from self._chat_completion_stream(plan.messages)
 
     def _embed_texts(self, texts: list[str], batch_size: int = 64) -> list[list[float]]:
         if not texts:
@@ -296,6 +344,30 @@ class RAGSystem:
         if isinstance(content, str):
             return content.strip()
         return ""
+
+    def _chat_completion_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
+        client = self.get_openai_client()
+        try:
+            stream = client.chat.completions.create(
+                model=self.settings.chat_model,
+                messages=messages,
+                temperature=self.settings.temperature,
+                max_completion_tokens=self.settings.response_max_tokens,
+                stream=True,
+            )
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta.content
+                if isinstance(delta, str) and delta:
+                    yield delta
+        except (APIConnectionError, APITimeoutError) as exc:
+            raise RuntimeError(
+                "Failed to reach the OpenAI API. Check internet access and whether "
+                f"network access is allowed in this environment. Original error: {exc}"
+            ) from exc
+        except APIError as exc:
+            raise RuntimeError(f"OpenAI API error: {exc}") from exc
 
     def _build_retrieval_query(self, question: str, history: list[dict[str, str]]) -> str:
         recent_user_turns = [item["content"] for item in history if item.get("role") == "user"][-2:]

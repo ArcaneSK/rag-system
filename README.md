@@ -8,6 +8,7 @@ This project is a fully working retrieval-augmented generation system that:
 - uses the official OpenAI Python SDK
 - stores vectors in local ChromaDB
 - uses hybrid retrieval (vector + keyword BM25-style scoring + reranking)
+- exposes a platform-neutral FastAPI layer for bot integrations
 - answers questions in a Gradio chat interface with grounded source citations
 
 ## What you get
@@ -18,6 +19,7 @@ This project is a fully working retrieval-augmented generation system that:
 - `data/models/`: local reranker model cache
 - `uv run rag-ingest`: CLI indexing entrypoint
 - `uv run rag-reset`: CLI reset entrypoint
+- `uv run rag-api`: FastAPI server for external bot clients
 - `app.py`: Gradio chat UI
 
 ## Setup
@@ -81,6 +83,68 @@ The Gradio UI will open a local chat interface where you can:
 - ask grounded questions against the indexed PDFs
 - see which PDF pages were used to answer
 
+## Run the API
+
+```bash
+uv run rag-api
+```
+
+The API starts on `127.0.0.1:8000` by default. Configure `API_HOST`, `API_PORT`, and `RAG_API_BEARER_TOKEN` in `.env` if you want to expose it more broadly or require bearer auth.
+
+### API endpoints
+
+- `GET /healthz`
+- `GET /readyz`
+- `POST /v1/chat/query`
+- `POST /v1/chat/stream`
+
+`/v1/chat/query` returns a normal JSON response. `/v1/chat/stream` returns Server-Sent Events (`text/event-stream`) with these events:
+
+- `metadata`
+- `sources`
+- `delta`
+- `done`
+- `error`
+
+### Example JSON request
+
+```json
+{
+  "message": "What does the installation guide say about primer drying time?",
+  "session_id": "demo-session-1",
+  "channel": "bot-service",
+  "history": [
+    {
+      "role": "user",
+      "content": "We are talking about the concrete installation PDFs."
+    }
+  ],
+  "debug": false
+}
+```
+
+### Example non-streaming call
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/chat/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Summarize the warranty language in the indexed PDFs.",
+    "session_id": "demo-session-1"
+  }'
+```
+
+### Example streaming call
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/v1/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What are the installation steps for the direct-to-concrete primer?",
+    "session_id": "demo-session-1"
+  }'
+```
+
 ## Cost and accuracy choices
 
 - Default embedding model: `text-embedding-3-small`
@@ -107,6 +171,9 @@ This keeps retrieval accurate while remaining cost-efficient: OpenAI is used for
 Relevant `.env` settings:
 
 ```bash
+API_HOST=127.0.0.1
+API_PORT=8000
+RAG_API_BEARER_TOKEN=
 MODEL_CACHE_DIR=data/models
 RERANK_ENABLED=true
 RERANK_CANDIDATES=12
@@ -122,6 +189,9 @@ OCR_RENDER_DPI=144
 
 ```text
 rag_system/
+  api/
+    app.py
+    models.py
   config.py
   ocr.py
   pdf_ingest.py

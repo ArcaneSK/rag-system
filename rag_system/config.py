@@ -22,6 +22,9 @@ class Settings:
     collection_name: str
     openai_api_key: str
     openai_base_url: str
+    api_host: str
+    api_port: int
+    api_bearer_token: str
     chat_model: str
     embedding_model: str
     chunk_size_words: int
@@ -64,6 +67,9 @@ class Settings:
             collection_name=os.getenv("COLLECTION_NAME", "pdf_rag"),
             openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
             openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+            api_host=os.getenv("API_HOST", "127.0.0.1").strip() or "127.0.0.1",
+            api_port=max(1, int(os.getenv("API_PORT", "8000"))),
+            api_bearer_token=os.getenv("RAG_API_BEARER_TOKEN", "").strip(),
             chat_model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini").strip(),
             embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small").strip(),
             chunk_size_words=chunk_size_words,
